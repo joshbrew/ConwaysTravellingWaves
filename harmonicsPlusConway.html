@@ -1,0 +1,1786 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Conway's Travelling Waves</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      color: #eee;
+      font-family: sans-serif;
+
+      /* Keep BODY as a flex container so that #wrapper can center its contents */
+      display: flex;
+    }
+
+    #panel {
+      flex: 0 0 320px;
+      /* fixed-width menu on the left */
+      background: #111a;
+      padding: 0.6rem 0.8rem;
+      overflow-y: auto;
+      box-sizing: border-box;
+      height: 100%;
+    }
+
+    #wrapper {
+      flex: 1;
+      /* take all remaining horizontal space */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #canvas‐container {
+      position: relative;
+    }
+
+
+    #sim {
+      border: 2px solid #111;
+      /* JavaScript code already does: 
+       sim.width  = COLS * SCALE * zoom;
+       sim.style.width  = sim.width + 'px';
+       sim.style.height = sim.height + 'px';
+     so—and because we removed object-fit—#sim will appear at exactly that many CSS pixels.
+  */
+    }
+
+    #paint {
+      /* absolutely stack on top of #sim inside #canvas‐container */
+      position: absolute;
+      top: 0;
+      left: 0;
+      /* We do NOT set inset:0 here, because that would fill the entire #wrapper. 
+     Instead, JS must make #paint’s CSS width/height match #sim’s CSS width/height. */
+      cursor: crosshair;
+      pointer-events: none;
+      opacity: 0;
+      transition: .15s;
+
+      /* remove any inherited border for the painting canvas */
+      border: none;
+      background: transparent;
+    }
+
+    #panel h3 {
+      margin: .2rem 0 .45rem;
+      font-size: 1rem;
+    }
+
+    #panel input[type=range],
+    #panel input[type=number],
+    #panel .panel‐table {
+      table-layout: fixed;
+    }
+
+    #panel span {
+      width: 48px;
+    }
+
+    #panel select {
+      width: 100%;
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+
+
+    #panel button {
+      margin-top: .3rem;
+      width: 100%;
+      padding: .32rem;
+      font-size: .85rem;
+      background: #222;
+      color: #eee;
+      border: 1px solid #333;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #panel button.active {
+      background: #c33;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="panel">
+    <h3>Simulation</h3>
+    <table class="panel‐table">
+      <!-- Rows / Cols -->
+      <tr>
+        <td class="label‐cell">Rows</td>
+        <td class="input‐cell">
+          <input id="rowsInput" type="number" min="16" max="400" value="96">
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell">Cols</td>
+        <td class="input‐cell">
+          <input id="colsInput" type="number" min="16" max="400" value="144">
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="applyRes">Apply resolution</button>
+        </td>
+      </tr>
+
+
+      <!-- Zoom slider -->
+      <tr>
+        <td class="label‐cell">Zoom</td>
+        <td class="input‐cell">
+          <input id="zoom" type="range" min="1" max="10" step="0.5" value="1">
+          <span id="zoomVal">1.0×</span>
+        </td>
+      </tr>
+
+      <!-- ω slider -->
+      <tr>
+        <td class="label‐cell">ω</td>
+        <td class="input‐cell">
+          <input id="omega" type="range" min="0" max="2" step="0.05" value="0.40">
+          <span id="omegaVal">0.40</span>
+        </td>
+      </tr>
+
+      <!-- dt slider -->
+      <tr>
+        <td class="label‐cell">dt</td>
+        <td class="input‐cell">
+          <input id="dt" type="range" min="0.02" max="0.5" step="0.01" value="0.10">
+          <span id="dtVal">0.10</span>
+        </td>
+      </tr>
+
+      <!-- aHM slider -->
+      <tr>
+        <td class="label‐cell">aHM</td>
+        <td class="input‐cell">
+          <input id="aHM" type="range" min="0" max="1" step="0.02" value="0.35">
+          <span id="aHMVal">0.35</span>
+        </td>
+      </tr>
+
+      <!-- σfreq slider -->
+      <tr>
+        <td class="label‐cell">σfreq</td>
+        <td class="input‐cell">
+          <input id="sigmaFreq" type="range" min="0" max="2" step="0.01" value="0.5">
+          <span id="sigmaFreqVal">0.5</span>
+        </td>
+      </tr>
+
+      <!-- σnoise slider -->
+      <tr>
+        <td class="label‐cell">σnoise</td>
+        <td class="input‐cell">
+          <input id="sigmaNoise" type="range" min="0" max="0.5" step="0.01" value="0.03">
+          <span id="sigmaNoiseVal">0.03</span>
+        </td>
+      </tr>
+
+      <!-- σglob slider -->
+      <tr>
+        <td class="label‐cell">σglob</td>
+        <td class="input‐cell">
+          <input id="sigmaGlobal" type="range" min="0" max="0.5" step="0.01" value="0.04">
+          <span id="sigmaGlobalVal">0.04</span>
+        </td>
+      </tr>
+
+
+      <!-- Recovery slider -->
+      <tr>
+        <td class="label‐cell">Recovery (s)</td>
+        <td class="input‐cell">
+          <input id="recoveryTime" type="range" min="0.1" max="10" step="0.1" value="2.0">
+          <span id="recoveryTimeVal">2.0</span>
+        </td>
+      </tr>
+
+      <!-- Radius slider -->
+      <tr>
+        <td class="label‐cell">Radius⚠️</td>
+        <td class="input‐cell">
+          <input id="radius" type="range" min="1" max="30" step="1" value="3">
+          <span id="radiusVal">3</span>
+        </td>
+      </tr>
+
+      <!-- Pause / Reset buttons -->
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="pauseBtn">Pause</button>
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="resetBtn">Reset</button>
+        </td>
+      </tr>
+
+      <!-- Life / Live Colour / Kick toggles -->
+      <tr>
+        <td class="label‐cell">Life</td>
+        <td class="input‐cell">
+          <button id="lifeBtn" class="active">Life ON</button>
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell">Live Colour</td>
+        <td class="input‐cell">
+          <button id="liveColourBtn">Live Colour: Phase</button>
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell">Kick</td>
+        <td class="input‐cell">
+          <button id="kickBtn" class="active">Kick ON</button>
+        </td>
+      </tr>
+
+      <tr>
+        <td class="label‐cell">Frame Delay</td>
+        <td class="input‐cell">
+          <input id="frameDelay" type="range" min="1" max="60" step="1" value="1">
+          <span id="frameDelayVal">1</span>
+        </td>
+      </tr>
+      <!-- Rule selector -->
+      <tr>
+        <td class="label‐cell">Rule</td>
+        <td class="input‐cell">
+          <select id="ruleSel"></select>
+        </td>
+      </tr>
+
+      <!-- Seed % slider -->
+      <tr>
+        <td class="label‐cell">Seed %</td>
+        <td class="input‐cell">
+          <input id="seedPct" type="range" min="0" max="100" step="1" value="10">
+          <span id="seedPctVal">10</span>
+        </td>
+      </tr>
+      <!-- Paint / Pixelate / New Colours buttons -->
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="paintBtn">Paint Sources</button>
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="pixelBtn">Pixelate</button>
+        </td>
+      </tr>
+      <tr>
+        <td class="label‐cell"></td>
+        <td class="input‐cell">
+          <button id="colorBtn">New Colours</button>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div id="wrapper">
+    <div id="canvas‐container">
+      <canvas id="sim"></canvas>
+      <canvas id="paint"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    /* ─── presets  ─── */
+    const PRESETS = [
+      { name: 'Conway Life', rule: 'S23/B3', seed: 10 },
+      { name: 'DryLife', rule: 'S23/B37', seed: 25 },
+      { name: 'HighLife', rule: 'S23/B36', seed: 10 },
+      { name: 'Maze', rule: 'S12345/B3', seed: 15 },
+      { name: 'Coral Growth+', rule: 'S345678/B3', seed: 20 },
+      { name: '2×2', rule: 'S125/B36', seed: 10 },
+      { name: 'DotLife', rule: 'S34678/B3678', seed: 50 },
+      { name: 'Anneal', rule: 'S35678/B4678', seed: 50 },
+      { name: 'Morley+', rule: 'S2345/B368', seed: 15 },
+
+      // Additional Life‐family rules:
+      { name: 'Replicator', rule: 'S1357/B1357', seed: 20 },
+      { name: 'Life without Death', rule: 'S012345678/B3', seed: 1 },
+      { name: 'Diamoeba', rule: 'S5678/B35678', seed: 45 },
+      { name: 'Move', rule: 'S245/B368', seed: 25 },
+      { name: 'Stains', rule: 'S125/B5', seed: 15 },
+      { name: 'Seeds', rule: 'B2/S', seed: 20 },
+      { name: 'Day & Night', rule: 'S34678/B3678', seed: 45 },
+      { name: '2×2 Big (radius=2)', rule: 'S12/B3:N2', seed: 1 },
+      { name: 'Generations (G4,B3/S)', rule: 'G4:B3/S', seed: 3 },
+      { name: 'Brian’s Brain', rule: 'M3:B2/S', seed: 20 },
+      { name: 'Seeds Generations (G3)', rule: 'G3:B2/S', seed: 15 },
+
+      // Even more classical variants:
+      { name: 'Maze 3D (S1/B3)', rule: 'S1/B3', seed: 20 },
+      { name: 'Pseudo Life', rule: 'S013567/B3', seed: 20 },
+      { name: 'Move 3D (S34/B3)', rule: 'S34/B3', seed: 20 },
+
+      // BZ (Belousov–Zhabotinsky) variants:
+      { name: 'BZ (default)', rule: 'BZ', seed: 10 },
+      { name: 'Rounder Ripples', rule: 'BZ:N2:T4:R2:D4', seed: 10 },
+      { name: 'Noisy BZ', rule: 'BZ:P0.1:C0.8', seed: 10 },
+      { name: 'Dual-thr BZ', rule: 'BZ:T+2:T-5:R3', seed: 10 },
+      {
+        name: 'Winding BZ (steady)',
+        rule: 'BZ:N3:T3:T-6:M4:E2:R4:D6:P0.02:C0.9',
+        seed: 10
+      },
+
+      // — New BZ Variants —
+      { name: 'Fast Spiral BZ', rule: 'BZ:N1:T2:R1:D3', seed: 10 },
+      //   • N1: radius=1 (just nearest 8)
+      //   • T2: resting→excite if ≥2 neighbors
+      //   • no over-excite threshold (remains null)
+      //   • default M=3, E=1, R=1, D=3 → rapid, tight spirals that keep re-arising
+
+      { name: 'Long-Refract BZ', rule: 'BZ:N2:T3:R5:D5', seed: 5 },
+      //   • N2: radius=2 (5×5 neighborhood)
+      //   • T3: excite at ≥3 neighbors
+      //   • no over-excite threshold (remains null)
+      //   • R5: long refractory stretch → waves stretch out, overlap, and break into multiple spirals
+      //   • D5: slower life updates for visible wavefront curvature
+
+      { name: 'Noisy Spiral BZ', rule: 'BZ:N2:T3:R2:D5:P0.05:C0.9', seed: 10 },
+      //   • N2: radius=2
+      //   • T3: excite at ≥3
+      //   • R2: short refract (gives room for collisions)
+      //   • D5: slower updates
+      //   • P0.05: 5% random excitations (seeds new spiral cores)
+      //   • C0.9: 90% coupling (some neighbors fail, producing drifting wave tips)
+      {
+        name: 'Dense‐Forest BZ',
+        rule: 'BZ:N3:T3:R3:D6:P0.02:C0.9',
+        seed: 10
+      },
+      //   • N3: radius=3
+      //   • T4: excite at ≥4
+      //   • T-8: if ≥8 neighbors, immediate over-excite → bursts break up into multiple centers
+      //   • M5: 5 total states (0=rest,1=excite,2–4=refract)
+      //   • E2: excite lasts 2 ticks
+      //   • R3: each refractory stage lasts 3 ticks
+      //   • D7: long delay → very slowly evolving, dense spiral forests
+
+      { name: 'Sparse Turing BZ', rule: 'BZ:N2:T+2:T-5:R1:D4:P0.02:C1', seed: 10 }
+      //   • N2: radius=2
+      //   • T+2: excite at ≥2
+      //   • T-5: if ≥5, auto-refract
+      //   • R1: single-tick refractory (fast recovery)
+      //   • D4: update every 4 frames
+      //   • P0.02: 2% spontaneous excite → small random sparks, seeding “Turing-like” patches
+      //   • C1: full coupling (every excited neighbor always counts)
+    ];
+
+    PRESETS.forEach((p, i) => {
+      $('ruleSel').insertAdjacentHTML(
+        'beforeend',
+        `<option value="${i}">${p.name}${p.rule !== 'BZ' ? ` (${p.rule})` : ''}</option>`
+      );
+    });
+    $('ruleSel').value = '0';
+
+    /* ─── globals ─── */
+    let ROWS, COLS, N, SCALE = 8;
+    let sim, paint, ctx, pCtx, img, rgba;
+    let phase, phaseN, life, lifeN, freq, age, cScale;
+    let kOfs = [], kW = [], kLen, NB;
+    const TAU = Math.PI * 2;
+
+    let bzTick = 0;
+    const BZ_DELAY = 5;  // increase to slow BZ further (number of frames between updates)
+    // How many steps it takes for an excited cell to fade back into phase
+    const EXCITE_FADE = 0.15;    // increase→slower fade
+
+    // How many steps it takes for a refractory cell to fade back into phase
+    const REFRACT_FADE = 0.02;   // increase→slower fade
+
+    /* belousov-zhabotinsky state machine constants */
+    const BZ_STATES = 3;     // 0=resting, 1=excited, 2=refractory
+
+    /* zoom factor (1× by default) */
+    let zoomFactor = 1;
+
+    /* palette texture info */
+    let paletteTex = null;          // WebGL handle for the 360×1 palette
+    let paletteRGBA = null;         // Uint8Array(360×4) to upload
+
+    /* GPU filtering toggle (true = smooth/linear, false = pixelated/nearest) */
+    let smooth = true;
+
+    let useBZ = false;
+    let bzConfig = null;
+
+    // Globals for Conway/Generations:
+    let LIFE_RADIUS = 1;
+    let LIFE_K = 2;            // number of states (2 = classic Life; >2 = Generations)
+    let LIFE_MAX_NB = 8;       // = (2*LIFE_RADIUS+1)^2 - 1
+    let SURV = new Uint8Array(LIFE_MAX_NB + 1);
+    let BIRTH = new Uint8Array(LIFE_MAX_NB + 1);
+
+    let frameDelay = 1;
+    let frameTick = 0;
+
+
+    /* params */
+    const P = {
+      omega: 0.4,
+      dt: 0.10,
+      aHM: 0.35,
+      sigmaFreq: 0.50,
+      sigmaNoise: 0.03,
+      sigmaGlobal: 0.04,
+      radius: 3,
+      recoveryTime: 2.0
+    };
+
+
+    /**
+ * parseLifeRule(ruleStr)
+ *
+ * A fully‐featured parser for totalistic (“Conway‐style”) Life rules, with optional:
+ *   • comma‐separated digits (e.g. “S1,3,5/B2,6”)
+ *   • inclusive ranges (e.g. “S2-5/B3-4”)
+ *   • optional neighborhood radius (:N⟨digit⟩)
+ *   • optional multi‐state / Generations prefix (G⟨k⟩: or M⟨k⟩:)
+ *
+ * Now also allows an empty survive or birth list, e.g. “B2/S”.
+ *
+ * Returns an object:
+ *   {
+ *     radius:      <integer>,            // Moore radius (default 1)
+ *     kStates:     <integer>,            // number of states (default 2)
+ *     maxNbrs:     <integer>,            // = (2*radius+1)^2 - 1
+ *     birth:       Uint8Array(maxNbrs+1),// birth[n] = 1 if n neighbors cause birth
+ *     surv:        Uint8Array(maxNbrs+1) // surv[n]  = 1 if n neighbors cause survival/maintenance
+ *   }
+ *
+ * Throws SyntaxError on any invalid token.
+ */
+    function parseLifeRule(ruleStr) {
+      const raw = ruleStr.trim().toUpperCase();
+      if (!raw) {
+        throw new SyntaxError(`Empty rule string`);
+      }
+
+      // 1) Split on ":" to separate optional prefixes (G⟨k⟩, M⟨k⟩, N⟨r⟩) from the core "S…/B…" or "B…/S…" piece.
+      const segments = raw.split(':');
+      let core = null;
+      const prefixes = [];
+
+      for (let seg of segments) {
+        if (seg.includes('/')) {
+          if (core !== null) {
+            throw new SyntaxError(`Multiple "/"‐containing segments in "${ruleStr}"`);
+          }
+          core = seg;
+        } else {
+          prefixes.push(seg);
+        }
+      }
+      if (!core) {
+        throw new SyntaxError(`Missing "S…/B…" (or "B…/S…") portion in "${ruleStr}"`);
+      }
+
+      // 2) Default parameters
+      let radius = 1;       // Moore neighborhood radius
+      let kStates = 2;      // 2‐state Life by default
+
+      // 3) Process each prefix token
+      prefixes.forEach(tok => {
+        // Generations prefix: "G⟨digit+⟩"
+        if (/^G[2-9][0-9]*$/.test(tok)) {
+          kStates = Number(tok.slice(1));
+          if (kStates < 2) {
+            throw new SyntaxError(`Generations k ("G${kStates}") must be ≥ 2 in "${ruleStr}"`);
+          }
+        }
+        // Multi-state prefix: "M⟨digit+⟩"
+        else if (/^M[2-9][0-9]*$/.test(tok)) {
+          kStates = Number(tok.slice(1));
+          if (kStates < 2) {
+            throw new SyntaxError(`Multi‐state k ("M${kStates}") must be ≥ 2 in "${ruleStr}"`);
+          }
+        }
+        // Neighborhood radius: "N⟨1-9⟩"
+        else if (/^N[1-9]$/.test(tok)) {
+          radius = Number(tok.slice(1));
+        }
+        else {
+          throw new SyntaxError(`Unrecognized prefix "${tok}" in "${ruleStr}"`);
+        }
+      });
+
+      // 4) Compute maxNbrs based on radius
+      const side = 2 * radius + 1;
+      const maxNbrs = side * side - 1;
+
+      // 5) Prepare birth[] and surv[] arrays of length maxNbrs+1
+      const birth = new Uint8Array(maxNbrs + 1);
+      const surv = new Uint8Array(maxNbrs + 1);
+
+      // 6) Parse the core "S…/B…" or "B…/S…" piece,
+      //    allowing empty lists on either side.
+      //    Now use "*" instead of "+" so that zero-length lists are accepted.
+      const match = core.match(/^([SB])([0-9,-]*)\/([SB])([0-9,-]*)$/);
+      if (!match) {
+        throw new SyntaxError(
+          `Invalid Life core "${core}". Expected "S⟨list⟩/B⟨list⟩" or "B⟨list⟩/S⟨list⟩", with digits 0..${maxNbrs}, commas, ranges, or empty.`
+        );
+      }
+
+      const firstLetter = match[1]; // 'S' or 'B'
+      const firstList = match[2]; // may be "" (empty)
+      const secondLetter = match[3];
+      const secondList = match[4]; // may be "" (empty)
+
+      function expandTokens(arr, tokenList) {
+        // If tokenList is empty, do nothing
+        if (!tokenList) return;
+
+        // Split by commas
+        tokenList.split(',').forEach(tok => {
+          if (!tok) {
+            // skip accidental empty token
+            return;
+          }
+          if (tok.includes('-')) {
+            // Range form "a-b"
+            const parts = tok.split('-').map(x => Number(x));
+            if (parts.length !== 2) {
+              throw new SyntaxError(`Invalid range "${tok}" in "${ruleStr}"`);
+            }
+            const a = parts[0], b = parts[1];
+            if (
+              isNaN(a) || isNaN(b) ||
+              a < 0 || b < 0 || a > maxNbrs || b > maxNbrs ||
+              a > b
+            ) {
+              throw new SyntaxError(
+                `Invalid range "${tok}" in "${ruleStr}". Must be within 0..${maxNbrs} and a≤b.`
+              );
+            }
+            for (let x = a; x <= b; x++) {
+              arr[x] = 1;
+            }
+          }
+          else {
+            // Either a single number ≤ maxNbrs, OR a multi‐digit string > maxNbrs → split into single chars
+            const n = Number(tok);
+            if (!isNaN(n) && n >= 0 && n <= maxNbrs) {
+              // e.g. "3" or "12" when maxNbrs≥12
+              arr[n] = 1;
+            }
+            else {
+              // Interpret each character individually:
+              // e.g. "23" when maxNbrs=8 → '2' and '3'
+              for (let ch of tok) {
+                const d = Number(ch);
+                if (isNaN(d) || d < 0 || d > maxNbrs) {
+                  throw new SyntaxError(
+                    `Invalid digit "${ch}" in token "${tok}" of "${ruleStr}". Allowed 0..${maxNbrs}.`
+                  );
+                }
+                arr[d] = 1;
+              }
+            }
+          }
+        });
+      }
+
+      // Fill either surv/birth depending on letter order
+      if (firstLetter === 'S') {
+        expandTokens(surv, firstList);
+        expandTokens(birth, secondList);
+      } else {
+        expandTokens(birth, firstList);
+        expandTokens(surv, secondList);
+      }
+
+      // 7) Return config
+      return {
+        radius,      // Moore radius
+        kStates,     // number of states
+        maxNbrs,     // (2*radius+1)^2 - 1
+        birth,       // Uint8Array(maxNbrs+1)
+        surv         // Uint8Array(maxNbrs+1)
+      };
+    }
+
+    /**
+ * parseBZRule(ruleStr)
+ *
+ * A fully-featured parser for Belousov–Zhabotinsky (“BZ-style”) excitable-media rules,
+ * with optional:
+ *   • neighborhood radius      :N⟨r⟩
+ *   • excitation threshold     :T⟨n⟩   or  :T+⟨n⟩
+ *   • over-excite threshold    :T-⟨n⟩
+ *   • multi-state ring length  :M⟨m⟩   (0=rest,1=excite,2..M−1=refract)
+ *   • explicit excite duration :E⟨d⟩   (how many BZ-ticks state=1 lasts)
+ *   • explicit refractory dur.  :R⟨d⟩   (how many BZ-ticks each refractory stage lasts)
+ *   • update delay             :D⟨d⟩   (how many animation frames between life updates)
+ *   • spontaneous probability  :P⟨0–1⟩  (chance to excite even if threshold not met)
+ *   • coupling probability     :C⟨0–1⟩  (each excited neighbor only counts with this probability)
+ *
+ * Syntax examples:
+ *   "BZ"                    → N=1, thresholdMin=2, thresholdMax=null, M=3, exciteDur=1, refractDur=1, delay=5, prob=0, coupling=1
+ *   "BZ:T3"                 → thresholdMin=3
+ *   "BZ:T+2"                → thresholdMin=2  (same as "T2")
+ *   "BZ:T-5"                → thresholdMax=5  (auto-refract if ≥5)
+ *   "BZ:N2:T4:R2:D4"        → radius=2, thresholdMin=4, refractDur=2, delay=4
+ *   "BZ:M5:T+3:R3:D6"       → 5-state BZ, thresholdMin=3, refractDur=3, delay=6
+ *   "BZ:N2:T2-5:P0.1:C0.8"   → radius=2, excite≥2, auto-refract≥5, prob=0.1, coupling=0.8
+ *
+ * Returns an object:
+ *   {
+ *     radius:       <integer>,      // Moore radius
+ *     thresholdMin: <integer>,      // resting→excite if neighborCount ≥ thresholdMin
+ *     thresholdMax: <integer|null>, // if non-null: excited→refract if neighborCount ≥ thresholdMax
+ *     M:            <integer>,      // total BZ states (default 3: 0=rest,1=excite,2=refract)
+ *     exciteDur:    <integer>,      // how many BZ-ticks state=1 lasts
+ *     refractDur:   <integer>,      // how many BZ-ticks each refractory stage lasts
+ *     delay:        <integer>,      // animation-frame delay between life updates
+ *     prob:         <number>,       // 0..1, spontaneous excite probability
+ *     coupling:     <number>        // 0..1, chance each excited neighbor “counts”
+ *   }
+ *
+ * Throws SyntaxError on any invalid token.
+ */
+    function parseBZRule(ruleStr) {
+      const raw = ruleStr.trim().toUpperCase();
+      if (!raw.startsWith('BZ')) {
+        throw new SyntaxError(`BZ rule must start with "BZ", got "${ruleStr}"`);
+      }
+
+      // 1) Split on ":" to separate tokens
+      const segments = raw.split(':');
+      // segments[0] should be "BZ"
+      const tokens = segments.slice(1);
+
+      // 2) Default configuration
+      const config = {
+        radius: 1,     // neighborhood radius
+        thresholdMin: 2,     // resting→excite if ≥2 neighbors
+        thresholdMax: null,  // if non-null: excited→refract if ≥ thresholdMax
+        M: 3,     // total states (0=rest,1=excite,2=refract)
+        exciteDur: 1,     // how many BZ-ticks state=1 lasts
+        refractDur: 1,     // how many BZ-ticks each refractory stage lasts
+        delay: 5,     // # of animation frames between life updates
+        prob: 0,     // spontaneous excite probability
+        coupling: 1      // probability that each excited neighbor “counts”
+      };
+
+      // 3) Process each token
+      tokens.forEach(tok => {
+        // Neighborhood radius: N⟨1-9⟩
+        if (/^N[1-9]$/.test(tok)) {
+          config.radius = Number(tok.slice(1));
+        }
+        // Total states: M⟨2-9〉 (0..M-1 states)
+        else if (/^M[2-9][0-9]*$/.test(tok)) {
+          config.M = Number(tok.slice(1));
+          if (config.M < 2) {
+            throw new SyntaxError(`Invalid M="${tok}". Must be ≥2.`);
+          }
+        }
+        // Excited duration: E⟨digit+⟩
+        else if (/^E[1-9][0-9]*$/.test(tok)) {
+          config.exciteDur = Number(tok.slice(1));
+        }
+        // Refractory duration: R⟨digit+⟩
+        else if (/^R[1-9][0-9]*$/.test(tok)) {
+          config.refractDur = Number(tok.slice(1));
+        }
+        // Update delay: D⟨digit+⟩
+        else if (/^D[1-9][0-9]*$/.test(tok)) {
+          config.delay = Number(tok.slice(1));
+        }
+        // Spontaneous probability: P0(.⟨digits⟩)?
+        else if (/^P(?:0(?:\.[0-9]+)?|1(?:\.0+)?)$/.test(tok)) {
+          const num = parseFloat(tok.slice(1));
+          if (num < 0 || num > 1) {
+            throw new SyntaxError(`Invalid probability "${tok}". Must be between 0 and 1.`);
+          }
+          config.prob = num;
+        }
+        // Coupling probability: C0(.⟨digits⟩)?
+        else if (/^C(?:0(?:\.[0-9]+)?|1(?:\.0+)?)$/.test(tok)) {
+          const num = parseFloat(tok.slice(1));
+          if (num < 0 || num > 1) {
+            throw new SyntaxError(`Invalid coupling "${tok}". Must be between 0 and 1.`);
+          }
+          config.coupling = num;
+        }
+        // Over-excite threshold: T-⟨digit+⟩  (excited→refract if ≥ this)
+        else if (/^T-[0-9]+$/.test(tok)) {
+          config.thresholdMax = Number(tok.slice(2));
+        }
+        // Standard thresholdMin: T⟨digit+⟩ or T+⟨digit+⟩
+        else if (/^T\+?[0-9]+$/.test(tok)) {
+          // strip off optional '+'
+          const val = Number(tok.replace(/^T\+?/, ''));
+          config.thresholdMin = val;
+        }
+        else {
+          throw new SyntaxError(`Invalid token "${tok}" in "${ruleStr}".`);
+        }
+      });
+
+      return config;
+    }
+
+
+    function compileRule(ruleStr) {
+      const key = ruleStr.trim().toUpperCase();
+
+      // 1) If it starts with "BZ", parse as BZ
+      if (key.startsWith('BZ')) {
+        useBZ = true;
+        bzConfig = parseBZRule(key);
+      }
+      // 2) Otherwise, parse as Conway/Generations
+      else {
+        useBZ = false;
+        // parseLifeRule returns { radius, kStates, maxNbrs, birth, surv }
+        const cfg = parseLifeRule(key);
+
+        // Update our globals for “life” loop:
+        LIFE_RADIUS = cfg.radius;
+        LIFE_K = cfg.kStates;
+        LIFE_MAX_NB = cfg.maxNbrs;
+
+        // Re‐allocate SURV/BIRTH arrays if needed
+        if (SURV.length !== LIFE_MAX_NB + 1) {
+          SURV = new Uint8Array(LIFE_MAX_NB + 1);
+          BIRTH = new Uint8Array(LIFE_MAX_NB + 1);
+        }
+
+        // Copy into SURV/BIRTH
+        SURV.set(cfg.surv);
+        BIRTH.set(cfg.birth);
+
+        bzConfig = null;
+      }
+    }
+
+
+
+    /* RNG */
+    let seedVal = Date.now();
+    const rand = () => ((seedVal = (seedVal * 1664525 + 1013904223) | 0) >>> 0) / 4294967296;
+
+    /* fast sine LUT */
+    const LUT = 1024, STEP = TAU / LUT, SIN = new Float32Array(LUT);
+    for (let i = 0; i < LUT; i++) SIN[i] = Math.sin(i * STEP);
+    const fsin = θ => SIN[((θ % TAU + TAU) % TAU) / STEP | 0];
+
+    /* palette + phaseShift & hueShiftDeg */
+    const pal = new Uint32Array(360);
+    let phaseShift = 0, hueShiftDeg = 0;
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function hsl(h, s, l) {
+      h /= 360;
+      const f = n => {
+        const k = (n + h * 12) % 12;
+        const a = s * Math.min(l, 1 - l);
+        return l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+      };
+      return [f(0) * 255, f(8) * 255, f(4) * 255];
+    }
+
+    /* ─── clamped gradient  ─── */
+    function makeGradient() {
+      const baseH = rand() * 360;
+      const spread = rand() * 90 + 60; // 60°–150° span
+      const h1 = baseH,
+        h2 = (baseH + spread / 2) % 360,
+        h3 = (baseH + spread) % 360;
+      const s1 = rand() * 0.4 + 0.6,
+        s2 = rand() * 0.4 + 0.6,
+        s3 = rand() * 0.4 + 0.6;
+      const l1 = rand() * 0.3 + 0.35,
+        l2 = rand() * 0.3 + 0.35,
+        l3 = rand() * 0.3 + 0.35;
+
+      // Build the 360-entry “clamped” palette in pal[i]:
+      for (let i = 0; i < 360; i++) {
+        const t = i / 360;
+        let hh, sat, li;
+        if (t < 0.5) {
+          const u = t * 2;
+          hh = lerp(h1, h2, u);
+          sat = lerp(s1, s2, u);
+          li = lerp(l1, l2, u);
+        } else {
+          const u = (t - 0.5) * 2;
+          hh = lerp(h2, h3, u);
+          sat = lerp(s2, s3, u);
+          li = lerp(l2, l3, u);
+        }
+        const [r, g, b] = hsl(hh, sat, li);
+        pal[i] = (255 << 24) | (b << 16) | (g << 8) | (r);
+      }
+      phaseShift = rand() * TAU;
+      hueShiftDeg = (rand() * 360) | 0;
+
+      // Build a Uint8Array(360×4) for uploading to a 360×1 RGBA texture:
+      paletteRGBA = new Uint8Array(360 * 4);
+      for (let i = 0; i < 360; i++) {
+        const c = pal[i];
+        const rr = c & 0xFF;
+        const gg = (c >> 8) & 0xFF;
+        const bb = (c >> 16) & 0xFF;
+        paletteRGBA[i * 4 + 0] = rr;
+        paletteRGBA[i * 4 + 1] = gg;
+        paletteRGBA[i * 4 + 2] = bb;
+        paletteRGBA[i * 4 + 3] = 255;
+      }
+    }
+
+    /* build Mexican-hat kernel offsets & weights */
+    function makeKernel(r) {
+      kOfs.length = kW.length = 0;
+      for (let y = -r; y <= r; y++) {
+        for (let x = -r; x <= r; x++) {
+          const w = Math.exp(-(x * x + y * y) / 2)
+            - 0.5 * Math.exp(-(x * x + y * y) / 8);
+          kOfs.push(y * COLS + x);
+          kW.push(w);
+        }
+      }
+      const mean = kW.reduce((sum, v) => sum + v, 0) / kW.length;
+      for (let i = 0; i < kW.length; i++) kW[i] -= mean;
+      kLen = kW.length;
+    }
+
+    /* allocate & seed */
+    function allocGrid(r, c) {
+      ROWS = r; COLS = c; N = ROWS * COLS;
+
+      phase = new Float32Array(N);
+      phaseN = new Float32Array(N);
+      life = new Uint8Array(N);
+      lifeN = new Uint8Array(N);
+      age = new Uint8Array(N);
+      freq = new Float32Array(N);
+      cScale = new Float32Array(N).fill(1);
+
+      NB = [-COLS - 1, -COLS, -COLS + 1, -1, 1, COLS - 1, COLS, COLS + 1];
+      makeKernel(P.radius);
+
+      sim = $('sim');
+      paint = $('paint');
+
+      // 1) Give #sim exactly the size in CSS pixels we want:
+      sim.width = Math.floor(COLS * SCALE * zoomFactor);
+      sim.height = Math.floor(ROWS * SCALE * zoomFactor);
+      sim.style.width = sim.width + 'px';
+      sim.style.height = sim.height + 'px';
+
+      // 2) Make #paint the same CSS size as #sim:
+      paint.width = sim.width;
+      paint.height = sim.height;
+      paint.style.width = paint.width + 'px';
+      paint.style.height = paint.height + 'px';
+
+      // lose old WebGL context if it exists
+      if (gl) {
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        gl = null;
+      }
+    }
+
+    function reseedAll(pct) {
+      if (useBZ) {
+        for (let i = 0; i < N; i++) {
+          life[i] = (rand() < pct) ? 1 : 0;
+          age[i] = 0;
+          phase[i] = 0;
+          cScale[i] = 1;
+        }
+      } else {
+        for (let i = 0; i < N; i++) {
+          phase[i] = rand() * TAU;
+          life[i] = (rand() < pct) ? 1 : 0;
+          freq[i] = (rand() * 2 - 1) * P.sigmaFreq;
+          cScale[i] = 1;
+        }
+      }
+    }
+
+    function step() {
+      const recRate = 1 / (P.recoveryTime * 60);
+
+      // ─── Unified “frame‐delay” check ───
+      if (++frameTick >= frameDelay) {
+        frameTick = 0;
+
+        if (useBZ) {
+          // ── Life‐evolution for BZ only if lifeRun===true ──
+          if (lifeRun) {
+            const { radius, thresholdMin, thresholdMax, M, exciteDur, refractDur, prob, coupling } = bzConfig;
+            for (let i = 0; i < N; i++) {
+              const st = life[i];
+              const ageVal = age[i] || 0;
+
+              // count “excited” neighbors
+              let cnt = 0;
+              const r0 = Math.floor(i / COLS), c0 = i % COLS;
+              for (let dr = -radius; dr <= radius; dr++) {
+                for (let dc = -radius; dc <= radius; dc++) {
+                  if (dr === 0 && dc === 0) continue;
+                  const rr = (r0 + dr + ROWS) % ROWS;
+                  const cc = (c0 + dc + COLS) % COLS;
+                  const idx = rr * COLS + cc;
+                  if (life[idx] === 1 && Math.random() < coupling) cnt++;
+                }
+              }
+
+              if (st === 0) {
+                if (cnt >= thresholdMin || Math.random() < prob) {
+                  lifeN[i] = 1;
+                  age[i] = 1;
+                } else {
+                  lifeN[i] = 0;
+                  age[i] = 0;
+                }
+              }
+              else if (st === 1) {
+                if (thresholdMax !== null && cnt >= thresholdMax) {
+                  lifeN[i] = 2;
+                  age[i] = 1;
+                } else if (ageVal < exciteDur) {
+                  lifeN[i] = 1;
+                  age[i] = ageVal + 1;
+                } else {
+                  lifeN[i] = 2;
+                  age[i] = 1;
+                }
+              }
+              else {
+                if (st < M - 1 && ageVal < refractDur) {
+                  lifeN[i] = st + 1;
+                  age[i] = ageVal + 1;
+                } else {
+                  lifeN[i] = 0;
+                  age[i] = 0;
+                }
+              }
+            }
+            life.set(lifeN);
+          }
+        }
+        else {
+          // ── Life‐evolution for Conway/Generations only if lifeRun===true ──
+          if (lifeRun) {
+            for (let i = 0; i < N; i++) {
+              const r0 = Math.floor(i / COLS), c0 = i % COLS;
+              let nn = 0;
+              for (let dr = -LIFE_RADIUS; dr <= LIFE_RADIUS; dr++) {
+                for (let dc = -LIFE_RADIUS; dc <= LIFE_RADIUS; dc++) {
+                  if (dr === 0 && dc === 0) continue;
+                  const rr = (r0 + dr + ROWS) % ROWS;
+                  const cc = (c0 + dc + COLS) % COLS;
+                  const idx = rr * COLS + cc;
+                  nn += life[idx] ? 1 : 0;
+                }
+              }
+
+              if (LIFE_K === 2) {
+                lifeN[i] = life[i] ? SURV[nn] : BIRTH[nn];
+              } else {
+                if (life[i] === 0) {
+                  lifeN[i] = BIRTH[nn] ? (LIFE_K - 1) : 0;
+                } else {
+                  lifeN[i] = life[i] - 1;
+                }
+              }
+            }
+            life.set(lifeN);
+          }
+        }
+      } // end of “if (++frameTick >= frameDelay)…”
+
+      // ─── Oscillator update (runs every single JS frame) ───
+      for (let i = 0; i < N; i++) {
+        // Ramp up coupling if not “alive” (BZ: state≠1; Conway: state=0):
+        if (useBZ) {
+          if (life[i] !== 1) {
+            cScale[i] = Math.min(1, cScale[i] + recRate);
+          }
+          if (kickOn && life[i] === 1) {
+            phaseN[i] = 0;
+            continue;
+          } else {
+            phaseN[i] = phase[i];
+          }
+        } else {
+          if (life[i] === 0) {
+            cScale[i] = Math.min(1, cScale[i] + recRate);
+          }
+          if (kickOn && life[i] > 0) {
+            phaseN[i] = 0;
+            continue;
+          } else {
+            phaseN[i] = phase[i];
+          }
+        }
+
+        let sum = 0;
+        for (let k = 0; k < kLen; k++) {
+          const j = (i + kOfs[k] + N) % N;
+          const d = phase[j] - phase[i];
+          sum += kW[k] * (fsin(d) - P.aHM * fsin(d + d));
+        }
+        sum *= gCoupling * cScale[i];
+
+        const noiseTerm = P.sigmaNoise * (rand() * 2 - 1)
+          + P.sigmaGlobal * (rand() * 2 - 1);
+
+        let phiVal = phase[i] + P.dt * (P.omega + freq[i] + sum) + noiseTerm;
+        phiVal %= TAU;
+        if (phiVal < 0) phiVal += TAU;
+        phaseN[i] = phiVal;
+      }
+      phase.set(phaseN);
+    }
+
+
+    /* ─── 2D fallback rendering (COLS×ROWS offscreen + drawImage) ─── */
+    let offscreenCanvas = document.createElement('canvas');
+    let offscreenCtx = offscreenCanvas.getContext('2d');
+    function render2D() {
+      offscreenCanvas.width = COLS;
+      offscreenCanvas.height = ROWS;
+      const img2 = offscreenCtx.createImageData(COLS, ROWS);
+      const rgba2 = new Uint32Array(img2.data.buffer);
+
+      for (let i = 0; i < N; i++) {
+        if (useBZ) {
+          const s = life[i];
+          // Always sample the phase‐palette first
+          let idx = ((phase[i] + phaseShift) / TAU * 360 | 0) % 360;
+          if (idx < 0) idx += 360;
+          let baseCol = pal[idx]; // underlying wave color
+
+          if (s === 1) {
+            // Excited → blend toward white
+            // Extract RGB channels
+            const r = baseCol & 0xff,
+              g = (baseCol >> 8) & 0xff,
+              b = (baseCol >> 16) & 0xff;
+            // lerp toward white by EXCITE_FADE
+            const nr = Math.min(255, r + (255 - r) * EXCITE_FADE + 0.5) | 0;
+            const ng = Math.min(255, g + (255 - g) * EXCITE_FADE + 0.5) | 0;
+            const nb = Math.min(255, b + (255 - b) * EXCITE_FADE + 0.5) | 0;
+            rgba2[i] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
+          } else if (s === 2) {
+            // Refractory → blend toward a darker gray (midway)
+            const r = baseCol & 0xff,
+              g = (baseCol >> 8) & 0xff,
+              b = (baseCol >> 16) & 0xff;
+            // lerp toward 128,128,128 by REFRACT_FADE
+            const nr = Math.max(0, r + (128 - r) * REFRACT_FADE + 0.5) | 0;
+            const ng = Math.max(0, g + (128 - g) * REFRACT_FADE + 0.5) | 0;
+            const nb = Math.max(0, b + (128 - b) * REFRACT_FADE + 0.5) | 0;
+            rgba2[i] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
+          } else {
+            // Resting → draw pure phase color
+            rgba2[i] = baseCol;
+          }
+        } else {
+          // Non‐BZ: unchanged from before
+          let idx = ((phase[i] + phaseShift) / TAU * 360 | 0) % 360;
+          if (idx < 0) idx += 360;
+          let col = pal[idx];
+
+          if (painting && !life[i]) {
+            const r = col & 0xff,
+              g = (col >> 8) & 0xff,
+              b = (col >> 16) & 0xff;
+            col = (255 << 24) |
+              (((b * 0.45) & 0xff) << 16) |
+              (((g * 0.45) & 0xff) << 8) |
+              ((r * 0.45) & 0xff);
+          }
+          if (life[i] && whiteLive) {
+            col |= 0x00FFFFFF; // force white
+          }
+          rgba2[i] = col;
+        }
+      }
+
+      offscreenCtx.putImageData(img2, 0, 0);
+      ctx = sim.getContext('2d');
+      ctx.clearRect(0, 0, sim.width, sim.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        offscreenCanvas,
+        0, 0, COLS, ROWS,
+        0, 0, sim.width, sim.height
+      );
+    }
+
+
+
+    /* ─── WebGL2 rendering ─── */
+    let gl, phaseTex, lifeTex, programInfo;
+    let paused = false,
+      painting = false,
+      lifeRun = true,
+      whiteLive = false,
+      kickOn = true,
+      gCoupling = 1;
+
+    // Vertex shader (unchanged)
+    const vsSource = `#version 300 es
+    in vec2 a_position;
+    out vec2 v_texCoord;
+    void main() {
+      v_texCoord = a_position * 0.5 + 0.5;
+      gl_Position = vec4(a_position, 0.0, 1.0);
+    }`;
+
+    // Fragment shader: now samples from u_paletteTex instead of HSL→RGB
+    const fsSource = `#version 300 es
+precision mediump float;
+
+// ─── Define the two blending speeds as compile‐time constants ───
+#define EXCITE_FADE ${EXCITE_FADE}
+#define REFRACT_FADE ${REFRACT_FADE}
+
+in vec2 v_texCoord;
+uniform sampler2D u_phaseTex;
+uniform sampler2D u_lifeTex;
+uniform sampler2D u_paletteTex;  // 360×1 palette
+uniform bool      u_painting;
+uniform bool      u_whiteLive;
+uniform float     u_zoom;
+out vec4 outColor;
+
+void main() {
+  // 1) Recenter & shrink sampling window by (1/zoom) around (0.5,0.5)
+  vec2 centered = (v_texCoord - vec2(0.5)) / u_zoom + vec2(0.5);
+  if (centered.x < 0.0 || centered.x > 1.0 ||
+      centered.y < 0.0 || centered.y > 1.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  // 2) Sample phase‐texture to reconstruct phiVal (continuous oscillator)
+  vec4 ph = texture(u_phaseTex, centered);
+  float c = ph.r * 2.0 - 1.0;
+  float s = ph.g * 2.0 - 1.0;
+  float phiVal = atan(s, c);
+  if (phiVal < 0.0) phiVal += 6.2831853;
+
+  // 3) Map phiVal → [0..360) → palette lookup → baseRGB
+  float frac = phiVal / 6.2831853;           // normalized [0..1)
+  float idx  = floor(frac * 360.0);          // integer 0..359
+  float uTex = (idx + 0.5) / 360.0;           // lookup in 360×1 palette
+  vec3 baseRGB = texture(u_paletteTex, vec2(uTex, 0.5)).rgb;
+
+  // 4) Fetch BZ life value (0=rest, 1=excited, 2=refractory)
+  float lifeVal = texture(u_lifeTex, centered).r;
+
+  // ── NEW: If “Live Colour” is ON and this cell is _excited_, force pure white immediately
+  if (u_whiteLive && lifeVal > 0.5) {
+    outColor = vec4(vec3(1.0), 1.0);
+    return;
+  }
+
+  // 5) If still BZ and excited (but whiteLive was off), blend toward white by EXCITE_FADE
+  if (lifeVal > 0.5) {
+    vec3 white = vec3(1.0, 1.0, 1.0);
+    vec3 blended = mix(baseRGB, white, EXCITE_FADE);
+    outColor = vec4(blended, 1.0);
+    return;
+  }
+  else if (lifeVal > 0.01 && lifeVal < 0.5) {
+    vec3 gray = vec3(0.5, 0.5, 0.5);
+    vec3 blended = mix(baseRGB, gray, REFRACT_FADE);
+    outColor = vec4(blended, 1.0);
+    return;
+  }
+
+  // 5) Resting cell: just draw the base wave color
+  vec3 rgb = baseRGB;
+
+  // 6) Painting dimming (non‐BZ) if requested
+  if (u_painting && lifeVal < 0.01) {
+    rgb *= 0.45;
+  }
+  // 7) Live‐white override (non‐BZ only)
+  if (u_whiteLive && lifeVal < 0.01) {
+    // in BZ mode lifeVal < 0.01 means “resting,” so do nothing special here
+  }
+
+  outColor = vec4(rgb, 1.0);
+}`;
+
+
+
+    function initWebGL() {
+      const canvas = $('sim');
+      gl = canvas.getContext('webgl2', { antialias: false, depth: false });
+      if (!gl) {
+        return; // fallback to 2D
+      }
+
+      function compileShader(src, type) {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          console.error(
+            (type === gl.VERTEX_SHADER ? "VERTEX" : "FRAGMENT") +
+            " shader compile error:\n" + gl.getShaderInfoLog(sh)
+          );
+          const lines = src.split("\n");
+          console.groupCollapsed(">>> Shader source (with line numbers)");
+          lines.forEach((line, i) => {
+            console.log((i + 1).toString().padStart(3, " ") + ": " + line);
+          });
+          console.groupEnd();
+          gl.deleteShader(sh);
+          return null;
+        }
+
+        return sh;
+      }
+
+      // Strip any BOM/whitespace so "#version" starts at offset 0
+      const cleanVs = vsSource.replace(/^\uFEFF/, "").trimStart();
+      const cleanFs = fsSource.replace(/^\uFEFF/, "").trimStart();
+
+      const vs = compileShader(cleanVs, gl.VERTEX_SHADER);
+      const fs = compileShader(cleanFs, gl.FRAGMENT_SHADER);
+      if (!vs || !fs) return;
+
+      const program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error("Program link failed:", gl.getProgramInfoLog(program));
+        return;
+      }
+      gl.useProgram(program);
+
+      // get attribute/uniform locations
+      const posLoc = gl.getAttribLocation(program, 'a_position');
+      const u_phaseTexLoc = gl.getUniformLocation(program, 'u_phaseTex');
+      const u_lifeTexLoc = gl.getUniformLocation(program, 'u_lifeTex');
+      const u_paletteLoc = gl.getUniformLocation(program, 'u_paletteTex');
+      const u_painting = gl.getUniformLocation(program, 'u_painting');
+      const u_whiteLive = gl.getUniformLocation(program, 'u_whiteLive');
+      const u_zoomLoc = gl.getUniformLocation(program, 'u_zoom');
+
+      // full‐screen quad
+      const quadBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+      const verts = new Float32Array([
+        -1, -1, +1, -1, -1, +1,
+        -1, +1, +1, -1, +1, +1
+      ]);
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      // Create & initialize the phase texture (RGBA8)
+      phaseTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, phaseTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0,
+        gl.RGBA,
+        COLS, ROWS,
+        0,
+        gl.RGBA, gl.UNSIGNED_BYTE, null
+      );
+
+      // Create & initialize the life texture (RGBA8)
+      lifeTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, lifeTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0,
+        gl.RGBA,
+        COLS, ROWS,
+        0,
+        gl.RGBA, gl.UNSIGNED_BYTE, null
+      );
+
+      // Create & initialize the palette texture (360×1 RGBA)
+      paletteTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        360,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        paletteRGBA
+      );
+
+      // Bind textures to texture units
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, phaseTex);
+      gl.uniform1i(u_phaseTexLoc, 0);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, lifeTex);
+      gl.uniform1i(u_lifeTexLoc, 1);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+      gl.uniform1i(u_paletteLoc, 2);
+
+      // set viewport once; will be updated if the canvas size changes
+      gl.viewport(0, 0, canvas.width, canvas.height);
+
+      // store all uniform locations in programInfo for easy access
+      programInfo = {
+        program,
+        u_painting,
+        u_whiteLive,
+        u_zoomLoc
+      };
+    }
+
+    let phaseByteData = null, lifeByteData = null;
+    function updateTextures() {
+      if (!phaseByteData) {
+        phaseByteData = new Uint8Array(N * 4);
+        lifeByteData = new Uint8Array(N * 4);
+      }
+
+      for (let i = 0; i < N; i++) {
+        if (useBZ) {
+          // ─── Always write continuous oscillator into phaseByteData ───
+          // (exact same as non‐BZ)
+          const phiVal = phase[i];
+          const cr = Math.cos(phiVal) * 0.5 + 0.5;
+          const sr = Math.sin(phiVal) * 0.5 + 0.5;
+          const byteC = Math.floor(cr * 255 + 0.5);
+          const byteS = Math.floor(sr * 255 + 0.5);
+          const base = i * 4;
+          phaseByteData[base + 0] = byteC;
+          phaseByteData[base + 1] = byteS;
+          phaseByteData[base + 2] = 0;
+          phaseByteData[base + 3] = 255;
+
+          // ─── But write only BZ state into lifeByteData ───
+          //   1. Excited (1) → 255 in R channel
+          //   2. Refractory (2) → 128 in R channel
+          //   0. Resting   → 0 in R channel
+          let lifeByte;
+          if (life[i] === 1) {
+            lifeByte = 255;
+          } else if (life[i] === 2) {
+            lifeByte = 128;
+          } else {
+            lifeByte = 0;
+          }
+          lifeByteData[base + 0] = lifeByte;
+          lifeByteData[base + 1] = lifeByte;
+          lifeByteData[base + 2] = lifeByte;
+          lifeByteData[base + 3] = 255;
+        } else {
+          // ─── Non‐BZ: upload (cosφ, sinφ) → phaseByteData and standard lifeByteData ───
+          const phiVal = phase[i];
+          const cr = Math.cos(phiVal) * 0.5 + 0.5;
+          const sr = Math.sin(phiVal) * 0.5 + 0.5;
+          const byteC = Math.floor(cr * 255 + 0.5);
+          const byteS = Math.floor(sr * 255 + 0.5);
+          const base = i * 4;
+          phaseByteData[base + 0] = byteC;
+          phaseByteData[base + 1] = byteS;
+          phaseByteData[base + 2] = 0;
+          phaseByteData[base + 3] = 255;
+
+          const liveByte = life[i] ? 255 : 0;
+          lifeByteData[base + 0] = liveByte;
+          lifeByteData[base + 1] = 0;
+          lifeByteData[base + 2] = 0;
+          lifeByteData[base + 3] = 255;
+        }
+      }
+
+      // Upload into GPU
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, phaseTex);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0,
+        0, 0,
+        COLS, ROWS,
+        gl.RGBA, gl.UNSIGNED_BYTE,
+        phaseByteData
+      );
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, lifeTex);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0,
+        0, 0,
+        COLS, ROWS,
+        gl.RGBA, gl.UNSIGNED_BYTE,
+        lifeByteData
+      );
+    }
+
+
+    function drawScene() {
+      gl.useProgram(programInfo.program);
+      gl.uniform1i(programInfo.u_painting, painting ? 1 : 0);
+      gl.uniform1i(programInfo.u_whiteLive, whiteLive ? 1 : 0);
+      gl.uniform1f(programInfo.u_zoomLoc, zoomFactor);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    function loop() {
+      if (!paused) {
+        step();
+        if (gl) {
+          updateTextures();
+          // If the canvas size changed (because zoom changed), update viewport:
+          gl.viewport(0, 0, sim.width, sim.height);
+          drawScene();
+        } else {
+          render2D();
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('load', () => {
+      allocGrid(96, 144);
+      compileRule(PRESETS[0].rule);
+      reseedAll(PRESETS[0].seed / 100);
+      makeGradient();      // builds pal[] AND paletteRGBA[]
+      initWebGL();         // creates phaseTex, lifeTex, AND paletteTex
+      loop();
+
+      // paint canvas event handlers
+      paint.onmousedown = e => {
+        if (!painting) return;
+        drawVal = e.button ? 0 : 1;
+        setPix(e);
+        drawing = true;
+      };
+      paint.onmousemove = e => drawing && setPix(e);
+      paint.onmouseup = () => drawing = false;
+      paint.oncontextmenu = e => e.preventDefault();
+    });
+
+    /* ─── UI bindings ─── */
+    $('omega').oninput = () => {
+      P.omega = +$('omega').value;
+      $('omegaVal').textContent = (+$('omega').value).toFixed(2);
+    };
+    $('dt').oninput = () => {
+      P.dt = +$('dt').value;
+      $('dtVal').textContent = (+$('dt').value).toFixed(2);
+    };
+    $('aHM').oninput = () => {
+      P.aHM = +$('aHM').value;
+      $('aHMVal').textContent = (+$('aHM').value).toFixed(2);
+    };
+    $('sigmaFreq').oninput = () => {
+      P.sigmaFreq = +$('sigmaFreq').value;
+      $('sigmaFreqVal').textContent = (+$('sigmaFreq').value).toFixed(2);
+      for (let i = 0; i < N; i++) freq[i] = (rand() * 2 - 1) * P.sigmaFreq;
+    };
+    $('sigmaNoise').oninput = () => {
+      P.sigmaNoise = +$('sigmaNoise').value;
+      $('sigmaNoiseVal').textContent = (+$('sigmaNoise').value).toFixed(2);
+    };
+    $('sigmaGlobal').oninput = () => {
+      P.sigmaGlobal = +$('sigmaGlobal').value;
+      $('sigmaGlobalVal').textContent = (+$('sigmaGlobal').value).toFixed(2);
+    };
+    $('radius').oninput = () => {
+      P.radius = +$('radius').value;
+      $('radiusVal').textContent = (+$('radius').value);
+      makeKernel(P.radius);
+    };
+
+    $('recoveryTime').oninput = () => {
+      P.recoveryTime = +$('recoveryTime').value;
+      $('recoveryTimeVal').textContent = (+$('recoveryTime').value).toFixed(1);
+    };
+
+    /* ─── Zoom slider binding ─── */
+    $('zoom').oninput = () => {
+      zoomFactor = +$('zoom').value;
+      $('zoomVal').textContent = zoomFactor.toFixed(1) + '×';
+
+      // Re‐allocate canvas at the new zoom level
+      sim.width = Math.floor(COLS * SCALE * zoomFactor);
+      sim.height = Math.floor(ROWS * SCALE * zoomFactor);
+      sim.style.width = sim.width + 'px';
+      sim.style.height = sim.height + 'px';
+
+      paint.width = sim.width;
+      paint.height = sim.height;
+      paint.style.width = paint.width + 'px';
+      paint.style.height = paint.height + 'px';
+
+      if (!gl) {
+        // if we’re in 2D fallback, just redraw at new dimensions:
+        render2D();
+      }
+    };
+
+    $('pauseBtn').onclick = () => {
+      paused = !paused;
+      $('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+    };
+    $('resetBtn').onclick = () => {
+      reseedAll($('seedPct').value / 100);
+      //makeGradient();   // rebuild pal[] AND paletteRGBA[]
+      if (gl) {
+        // Re‐upload new palette into the palette texture:
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          360,
+          1,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          paletteRGBA
+        );
+      }
+      if (!gl) render2D();
+    };
+
+    $('lifeBtn').onclick = () => {
+      lifeRun = !lifeRun;
+      $('lifeBtn').classList.toggle('active', lifeRun);
+      $('lifeBtn').textContent = lifeRun ? 'Life ON' : 'Life OFF';
+    };
+
+    $('liveColourBtn').onclick = () => {
+      whiteLive = !whiteLive;
+      $('liveColourBtn').classList.toggle('active', whiteLive);
+      $('liveColourBtn').textContent = whiteLive ? 'Live Colour: White' : 'Live Colour: Phase';
+    };
+
+    $('kickBtn').onclick = () => {
+      kickOn = !kickOn;
+      $('kickBtn').classList.toggle('active', kickOn);
+      $('kickBtn').textContent = kickOn ? 'Kick ON' : 'Kick OFF';
+    };
+
+    $('paintBtn').onclick = () => {
+      painting = !painting;
+      paint.style.pointerEvents = painting ? 'auto' : 'none';
+      paint.style.opacity = painting ? 1 : 0;
+      $('paintBtn').classList.toggle('active', painting);
+    };
+
+    /* ─── Pixelate toggle ─── */
+    $('pixelBtn').onclick = () => {
+      // Determine whether we want to turn pixelation ON (true) or OFF (false)
+      const wantPixel = !(sim.style.imageRendering === 'pixelated');
+      // CSS scaling: though we keep canvas-size = CSS-size,
+      // setting imageRendering='pixelated' ensures if we ever CSS-scale, we see nearest.
+      sim.style.imageRendering = wantPixel ? 'pixelated' : 'auto';
+      paint.style.imageRendering = wantPixel ? 'pixelated' : 'auto';
+      $('pixelBtn').classList.toggle('active', wantPixel);
+
+      // On the GPU side, toggle our 'smooth' flag:
+      //  - wantPixel = true  → smooth = false  → use NEAREST filtering
+      //  - wantPixel = false → smooth = true   → use LINEAR filtering
+      smooth = !wantPixel;
+
+      if (gl) {
+        // Update phaseTex:
+        gl.bindTexture(gl.TEXTURE_2D, phaseTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+
+        // Update lifeTex:
+        gl.bindTexture(gl.TEXTURE_2D, lifeTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, smooth ? gl.LINEAR : gl.NEAREST);
+
+        // We keep paletteTex at NEAREST (it’s a 360×1 lookup table anyway):
+        gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      }
+    };
+
+    $('colorBtn').onclick = () => {
+      makeGradient();   // rebuild pal[] & paletteRGBA[]
+      if (gl) {
+        // Re‐upload the new palette into the GPU:
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          360,
+          1,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          paletteRGBA
+        );
+      }
+    };
+
+    $('applyRes').onclick = () => {
+      // 1) Read and clamp the new row/col inputs
+      const r = Math.max(16, Math.min(400, +$('rowsInput').value | 0));
+      const c = Math.max(16, Math.min(400, +$('colsInput').value | 0));
+      $('rowsInput').value = r;
+      $('colsInput').value = c;
+
+      // 2) Re‐allocate all arrays and canvases at the new size
+      allocGrid(r, c);
+
+      // ─── Force re‐allocation of texture byte‐arrays ───
+      phaseByteData = null;
+      lifeByteData = null;
+      // ─────────────────────────────────────────────────
+
+      // 3) Re‐compile the selected CA rule and reseed
+      compileRule(PRESETS[$('ruleSel').value].rule);
+      reseedAll($('seedPct').value / 100);
+
+      // 4) (Optional) Rebuild the clamped gradient palette if needed:
+      // makeGradient();
+
+      // 5) If WebGL is active, re‐upload the 360×1 palette texture
+      if (gl) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          360, 1,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          paletteRGBA
+        );
+      }
+
+      // ─── Now replace the old <canvas id="sim"> inside #canvas‐container ───
+      const oldSim = $('sim');
+      const container = document.getElementById('canvas‐container');
+
+      // Remove the old canvas from its parent (#canvas‐container)
+      container.removeChild(oldSim);
+
+      // Create a brand‐new <canvas id="sim"> with the updated size
+      const newSim = document.createElement('canvas');
+      newSim.id = 'sim';
+      newSim.width = Math.floor(COLS * SCALE * zoomFactor);
+      newSim.height = Math.floor(ROWS * SCALE * zoomFactor);
+      newSim.style.width = newSim.width + 'px';
+      newSim.style.height = newSim.height + 'px';
+
+      // Insert the new <canvas> just before the #paint canvas (both live under #canvas‐container)
+      container.insertBefore(newSim, $('paint'));
+
+      // Rebind our “sim” variable to the new canvas element
+      sim = newSim;
+
+      // Re‐initialize WebGL on the newly inserted <canvas>
+      initWebGL();
+    };
+
+    $('ruleSel').onchange = () => {
+      const p = PRESETS[$('ruleSel').value];
+      compileRule(p.rule);
+
+      // Set default frame‐delay: 
+      if (useBZ) {
+        frameDelay = (bzConfig && bzConfig.delay) || 5;
+      } else {
+        frameDelay = 1;
+      }
+      // Update the slider UI:
+      $('frameDelay').value = frameDelay;
+      $('frameDelayVal').textContent = frameDelay;
+
+      // Reseed:
+      $('seedPct').value = p.seed;
+      $('seedPctVal').textContent = p.seed;
+      reseedAll(p.seed / 100);
+    };
+
+    $('seedPct').oninput = e => {
+      $('seedPctVal').textContent = e.target.value;
+    };
+
+    $('frameDelay').oninput = e => {
+      frameDelay = +e.target.value;
+      $('frameDelayVal').textContent = frameDelay;
+    };
+
+    /* painting on “paint” canvas */
+    let drawing = false, drawVal = 1;
+    function setPix(e) {
+      const rect = paint.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / rect.width * COLS);
+      // compute and clamp the “raw” row, then flip it:
+      let rawY = Math.floor((e.clientY - rect.top) / rect.height * ROWS);
+      if (rawY < 0) rawY = 0;
+      if (rawY >= ROWS) rawY = ROWS - 1;
+      const y = (ROWS - 1) - rawY;
+
+      const idx = y * COLS + x;
+      if (idx >= 0 && idx < N) {
+        life[idx] = drawVal;
+        phase[idx] = 0;
+        cScale[idx] = 0;
+      }
+    }
+  </script>
+</body>
+
+</html>
