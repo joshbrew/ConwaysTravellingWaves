@@ -94,18 +94,57 @@
     #panel button {
       margin-top: .3rem;
       width: 100%;
-      padding: .32rem;
       font-size: .85rem;
       background: #222;
       color: #eee;
       border: 1px solid #333;
       border-radius: 4px;
+      padding: 5px;
       cursor: pointer;
     }
 
     #panel button.active {
       background: #c33;
     }
+
+    /* ─── Modal backdrop ─── */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+    }
+
+    /* ─── Modal inner box ─── */
+    .modal-content {
+      background: #222;
+      color: #eee;
+      padding: 1rem;
+      border-radius: 6px;
+      max-width: 50%;
+      width: 90%;
+      box-sizing: border-box;
+      position: relative;
+      font-size: 0.875rem;
+      line-height: 1.4;
+    }
+
+    /* ─── Close “×” button ─── */
+    .close-button {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      cursor: pointer;
+      font-size: 1.25rem;
+      user-select: none;
+    }
+    
   </style>
 </head>
 
@@ -265,6 +304,20 @@
         </td>
       </tr>
 
+      <tr>
+        <td class="label‐cell">Custom Rule</td>
+        <td class="input‐cell" style="display: flex; gap: 4px;">
+          <input id="customRuleInput" type="text" placeholder="e.g. S23/B3 or BZ:N2:T4:R2"
+            style="flex: 1; box-sizing: border-box;">
+          <button id="ruleApplyBtn" title="Apply rule">
+            ▶
+          </button>
+          <button id="ruleHelpBtn" title="Show help">
+            ?
+          </button>
+        </td>
+      </tr>
+
       <!-- Seed % slider -->
       <tr>
         <td class="label‐cell">Seed %</td>
@@ -293,6 +346,74 @@
         </td>
       </tr>
     </table>
+  </div>
+  <!-- ─── Rule-Help Modal (hidden by default) ─── -->
+  <div id="ruleHelpModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span id="closeRuleHelp" class="close-button">&times;</span>
+      <h3>How to Write a Rule</h3>
+
+      <h4>Conway-style (“Life” family)</h4>
+      <ul>
+        <li>
+          <code>S…/B…</code>
+          <ul>
+            <li><strong>S</strong> = list of neighbor-counts that let a live cell stay alive.</li>
+            <li><strong>B</strong> = list of neighbor-counts that turn a dead cell into a live cell.</li>
+          </ul>
+        </li>
+        <li>
+          <strong>Example:</strong> <code>S23/B3</code><br>
+          • Any live cell with exactly 2 or 3 neighbors survives.<br>
+          • Any dead cell with exactly 3 neighbors becomes alive.
+        </li>
+        <li>
+          <code>N<em>r</em></code> – set Moore-radius to <em>r</em> (default 1).<br>
+          <strong>Example:</strong> <code>N2:S3/B2</code> → radius 2 (checks 5×5 neighborhood).
+        </li>
+        <li>
+          <code>G<em>k</em></code> or <code>M<em>k</em></code> – use <em>k</em> states instead of 2 (default 2).<br>
+          In a k-state rule, a dead cell with a birth-count becomes state k–1, then ages down 1 per generation.<br>
+          <strong>Example:</strong> <code>G4:S3/B3</code> → 4 states (0 = dead, 3 → birth).
+        </li>
+        <li>
+          <code>D<em>d</em></code> – frame-delay between each Life update (default 1).<br>
+          <strong>Example:</strong> <code>D3:S23/B3</code> → apply Conway’s rule every 3 frames.
+        </li>
+      </ul>
+
+      <h4>BZ-style (excitable media)</h4>
+      <p>Must begin with <code>BZ</code>, then any of these tokens separated by “:”.</p>
+      <ul>
+        <li>
+          <code>N<em>r</em></code> – neighbor radius (default 1).
+        </li>
+        <li>
+          <code>T<em>n</em></code> – resting → excite if ≥ <em>n</em> excited neighbors.
+        </li>
+        <li>
+          <code>T-<em>n</em></code> – excited → refractory immediately if ≥ <em>n</em> excited neighbors.
+        </li>
+        <li>
+          <code>M<em>m</em></code> – total BZ states (default 3: 0 = rest, 1 = excite, 2 = refractory).
+        </li>
+        <li>
+          <code>R<em>d</em></code> – refractory duration per stage (default 1 timestep/stage).
+        </li>
+        <li>
+          <code>D<em>d</em></code> – frame-delay between each BZ update (default 5).
+        </li>
+        <li>
+          <code>P<em>p</em></code> – random excite probability (0 ≤ <em>p</em> ≤ 1).<br>
+          <strong>Example:</strong> <code>P0.05</code> → 5% chance per update.
+        </li>
+        <li>
+          <code>C<em>c</em></code> – coupling chance (0 ≤ <em>c</em> ≤ 1).<br>
+          Each excited neighbor counts with probability <em>c</em> toward thresholds.
+        </li>
+      </ul>
+      <p><strong>Example:</strong> <code>BZ:N2:T3:R2:D4:P0.05:C0.9</code></p>
+    </div>
   </div>
 
   <div id="wrapper">
@@ -427,7 +548,7 @@
     let smooth = true;
 
     let useBZ = false;
-    let bzConfig = null;
+    let currentConfig = null;
 
     // Globals for Conway/Generations:
     let LIFE_RADIUS = 1;
@@ -470,7 +591,8 @@
  *     kStates:     <integer>,            // number of states (default 2)
  *     maxNbrs:     <integer>,            // = (2*radius+1)^2 - 1
  *     birth:       Uint8Array(maxNbrs+1),// birth[n] = 1 if n neighbors cause birth
- *     surv:        Uint8Array(maxNbrs+1) // surv[n]  = 1 if n neighbors cause survival/maintenance
+ *     surv:        Uint8Array(maxNbrs+1),// surv[n]  = 1 if n neighbors cause survival/maintenance
+ *     delay:        <integer>            // animation-frame delay between life updates
  *   }
  *
  * Throws SyntaxError on any invalid token.
@@ -503,7 +625,7 @@
       // 2) Default parameters
       let radius = 1;       // Moore neighborhood radius
       let kStates = 2;      // 2‐state Life by default
-
+      let delay;
       // 3) Process each prefix token
       prefixes.forEach(tok => {
         // Generations prefix: "G⟨digit+⟩"
@@ -523,6 +645,10 @@
         // Neighborhood radius: "N⟨1-9⟩"
         else if (/^N[1-9]$/.test(tok)) {
           radius = Number(tok.slice(1));
+        }
+        // Update delay: D⟨digit+⟩
+        else if (/^D[1-9][0-9]*$/.test(tok)) {
+          delay = Number(tok.slice(1));
         }
         else {
           throw new SyntaxError(`Unrecognized prefix "${tok}" in "${ruleStr}"`);
@@ -621,7 +747,8 @@
         kStates,     // number of states
         maxNbrs,     // (2*radius+1)^2 - 1
         birth,       // Uint8Array(maxNbrs+1)
-        surv         // Uint8Array(maxNbrs+1)
+        surv,         // Uint8Array(maxNbrs+1)
+        delay
       };
     }
 
@@ -754,18 +881,18 @@
       // 1) If it starts with "BZ", parse as BZ
       if (key.startsWith('BZ')) {
         useBZ = true;
-        bzConfig = parseBZRule(key);
+        currentConfig = parseBZRule(key);
       }
       // 2) Otherwise, parse as Conway/Generations
       else {
         useBZ = false;
         // parseLifeRule returns { radius, kStates, maxNbrs, birth, surv }
-        const cfg = parseLifeRule(key);
+        currentConfig = parseLifeRule(key);
 
         // Update our globals for “life” loop:
-        LIFE_RADIUS = cfg.radius;
-        LIFE_K = cfg.kStates;
-        LIFE_MAX_NB = cfg.maxNbrs;
+        LIFE_RADIUS = currentConfig.radius;
+        LIFE_K = currentConfig.kStates;
+        LIFE_MAX_NB = currentConfig.maxNbrs;
 
         // Re‐allocate SURV/BIRTH arrays if needed
         if (SURV.length !== LIFE_MAX_NB + 1) {
@@ -774,10 +901,8 @@
         }
 
         // Copy into SURV/BIRTH
-        SURV.set(cfg.surv);
-        BIRTH.set(cfg.birth);
-
-        bzConfig = null;
+        SURV.set(currentConfig.surv);
+        BIRTH.set(currentConfig.birth);
       }
     }
 
@@ -938,7 +1063,7 @@
         if (useBZ) {
           // ── Life‐evolution for BZ only if lifeRun===true ──
           if (lifeRun) {
-            const { radius, thresholdMin, thresholdMax, M, exciteDur, refractDur, prob, coupling } = bzConfig;
+            const { radius, thresholdMin, thresholdMax, M, exciteDur, refractDur, prob, coupling } = currentConfig;
             for (let i = 0; i < N; i++) {
               const st = life[i];
               const ageVal = age[i] || 0;
@@ -1739,9 +1864,9 @@ void main() {
 
       // Set default frame‐delay: 
       if (useBZ) {
-        frameDelay = (bzConfig && bzConfig.delay) || 5;
+        frameDelay = (currentConfig && currentConfig.delay) || 5;
       } else {
-        frameDelay = 1;
+        frameDelay = (currentConfig && currentConfig.delay) || 1;
       }
       // Update the slider UI:
       $('frameDelay').value = frameDelay;
@@ -1761,6 +1886,77 @@ void main() {
       frameDelay = +e.target.value;
       $('frameDelayVal').textContent = frameDelay;
     };
+
+    // ─── Modal Toggle Logic ───
+    const ruleHelpBtn = document.getElementById('ruleHelpBtn');
+    const ruleHelpModal = document.getElementById('ruleHelpModal');
+    const closeRuleHelp = document.getElementById('closeRuleHelp');
+
+    ruleHelpBtn.addEventListener('click', () => {
+      ruleHelpModal.style.display = 'flex';
+    });
+
+    closeRuleHelp.addEventListener('click', () => {
+      ruleHelpModal.style.display = 'none';
+    });
+
+    // Also close if user clicks outside the content box:
+    ruleHelpModal.addEventListener('click', e => {
+      if (e.target === ruleHelpModal) {
+        ruleHelpModal.style.display = 'none';
+      }
+    });
+
+
+    const onApplyCustomRule = () => {
+      const val = document.getElementById('customRuleInput').value.trim();
+      if (!val) return;
+
+      try {
+        compileRule(val.toUpperCase());
+
+        // Adjust frameDelay for BZ vs. Life:
+        if (useBZ) {
+          frameDelay = currentConfig.delay || 1;
+        } else {
+          frameDelay = 1;
+        }
+        document.getElementById('frameDelay').value = frameDelay;
+        document.getElementById('frameDelayVal').textContent = frameDelay;
+
+        // Reseed current grid:
+        const pct = parseFloat(document.getElementById('seedPct').value) / 100;
+        reseedAll(pct);
+
+        // If WebGL is active, re‐upload the palette texture:
+        if (gl) {
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, paletteTex);
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            360,
+            1,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            paletteRGBA
+          );
+        }
+      } catch (err) {
+        alert('Invalid rule: ' + err.message);
+      }
+    }
+
+    // ─── “Enter” on Custom Rule Input ───
+    const customRuleInput = document.getElementById('customRuleInput');
+    customRuleInput.addEventListener('keydown', (e) => {
+      if (e.key === "Enter") onApplyCustomRule();
+    })
+    // ─── “Play” ▶ button logic ───
+    const ruleApplyBtn = document.getElementById('ruleApplyBtn');
+    ruleApplyBtn.addEventListener('click', onApplyCustomRule);
 
     /* painting on “paint” canvas */
     let drawing = false, drawVal = 1;
